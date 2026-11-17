@@ -94,7 +94,7 @@
   <h1 id="ov-title">블록 브레이커 3D</h1>
   <p id="ov-text">공을 쏴서 섬 위의 블록을 모두 떨어뜨리세요.<br>공은 한정되어 있습니다!</p>
   <button id="ov-btn">시작</button>
-  <div id="ver">v12</div>
+  <div id="ver">v13</div>
 </div></div>
 
 <script type="module">
@@ -392,12 +392,65 @@ const LEVELS = [
     for (const x of [-1.2, 1.2]) for (const z of [-0.5, 0.5]) addBlock(x, 4.9, z);
     addBlock(0, 4.9, 0); addBlock(0, 5.9, 0);
   }},
-  { name: '소용돌이 탑', balls: 7, build() {
+  { name: '소용돌이 탑', balls: 8, build() {
     const t = 0.5;
     for (let layer = 0; layer < 11; layer++) {
       const r = layer * 0.45, y = t / 2 + layer * t;
       for (let k = -1; k <= 1; k++)
         addBlock(Math.cos(r) * k, y, -Math.sin(r) * k, 0.95, t, 3, r);
+    }
+  }},
+  { name: '십자 탑', balls: 8, build() {
+    for (let y = 0; y < 6; y++) addBlock(0, 0.5 + y, 0);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]])
+      for (const d of [1, 2]) for (let y = 0; y < (d === 1 ? 4 : 2); y++) addBlock(dx * d, 0.5 + y, dz * d);
+  }},
+  { name: '계단 탑', balls: 8, build() {
+    for (let c = 0; c < 5; c++) for (const z of [-0.5, 0.5]) for (let y = 0; y <= c; y++) addBlock(c - 2, 0.5 + y, z);
+  }},
+  { name: '샌드위치', balls: 7, build() {
+    let y = 0;
+    for (let layer = 0; layer < 3; layer++) {
+      for (const x of [-0.55, 0.55]) for (const z of [-0.55, 0.55]) addBlock(x, y + 0.5, z);
+      y += 1;
+      addBlock(0, y + 0.2, 0, 2.6, 0.4, 2.6);                              // 무거운 판
+      y += 0.4;
+    }
+  }},
+  { name: '높은 벽', balls: 8, build() {
+    for (let row = 0; row < 8; row++) {
+      const off = row % 2 ? 0.5 : 0;
+      for (let i = -2; i <= 2 - (row % 2); i++) addBlock(i + off, 0.25 + row * 0.5, -2, 1, 0.5, 0.6);
+    }
+  }},
+  { name: '지붕 탑', balls: 8, build() {
+    for (const x of [-1.5, 1.5]) for (const z of [-1.5, 1.5]) for (let y = 0; y < 3; y++) addBlock(x, 0.5 + y, z);
+    addBlock(0, 3.3, 0, 4.5, 0.6, 4.5);                                    // 지붕
+    for (let k = 0; k < 3; k++) {
+      const n = 3 - k;
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) addBlock(i - (n - 1) / 2, 4.1 + k, j - (n - 1) / 2);
+    }
+  }},
+  { name: '삼총사', balls: 8, build() {
+    [[-2.2, 5], [0, 7], [2.2, 5]].forEach(([x, h]) => {
+      for (const z of [-0.5, 0.5]) for (let y = 0; y < h; y++) addBlock(x, 0.5 + y, z);
+    });
+  }},
+  { name: '벽돌 성', balls: 9, build() {
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
+      if (Math.max(Math.abs(i), Math.abs(j)) !== 2) continue;
+      const corner = Math.abs(i) === 2 && Math.abs(j) === 2;
+      for (let y = 0; y < (corner ? 4 : 2); y++) addBlock(i, 0.5 + y, j);
+    }
+  }},
+  { name: '최종 요새', balls: 9, build() {
+    // 속이 빈 5단 피라미드: 각 층은 테두리 블록만 쌓는다
+    for (let k = 0; k < 5; k++) {
+      const n = 5 - k;
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+        if (n > 2 && i > 0 && i < n - 1 && j > 0 && j < n - 1) continue;
+        addBlock(i - (n - 1) / 2, 0.5 + k, j - (n - 1) / 2);
+      }
     }
   }},
 ];
@@ -783,6 +836,20 @@ $('ov-btn').onclick = () => { score = 0; startLevel(START_LEVEL); };
 window.__bb = {
   levels: LEVELS.length,
   wakeAll: () => blocks.forEach(b => b.body.wakeUp()),
+  // 화면 갱신 없이 물리만 sec초 진행(숨겨진 창에서 테스트용). 실제 루프와 같은 깨우기 규칙을 쓴다.
+  step(sec) {
+    for (let i = 0; i < sec * 60; i++) {
+      const S = CANNON.Body.SLEEPING;
+      const active = balls.some(b => b.body.sleepState !== S && b.body.position.y > -3) ||
+        blocks.some(b => !b.out && b.body.sleepState !== S && b.body.velocity.lengthSquared() > 0.01);
+      if (active) for (const b of blocks) if (!b.out && b.body.sleepState === S) b.body.wakeUp();
+      world.step(1 / 60);
+    }
+  },
+  fallen: () => blocks.filter(b => b.body.position.y < -1.5).length,
+  go: i => startLevel(i),
+  project: (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; },
+  ballPos: () => balls.map(b => [b.body.position.x, b.body.position.y, b.body.position.z].map(v => +v.toFixed(1))),
   pos: () => blocks.map(b => [b.body.position.x, b.body.position.y, b.body.position.z]),
 };
 </script>
