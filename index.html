@@ -97,7 +97,7 @@
   <p id="ov-text">공을 쏴서 섬 위의 블록을 모두 떨어뜨리세요.<br>공은 한정되어 있습니다!</p>
   <button id="ov-btn">시작</button>
   <button id="ov-new" class="ghost" hidden>처음부터 시작</button>
-  <div id="ver">v14</div>
+  <div id="ver">v15</div>
 </div></div>
 
 <script type="module">
@@ -762,7 +762,7 @@ function fitCamera() {
 addEventListener('resize', fitCamera);
 fitCamera();
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
+if ('serviceWorker' in navigator && location.protocol === 'https:' && !window.Capacitor) navigator.serviceWorker.register('sw.js');
 
 // ---------- 루프 ----------
 let last = performance.now();
@@ -863,7 +863,7 @@ if (saved) {
 } else {
   $('ov-btn').onclick = () => { score = 0; startLevel(START_LEVEL); };
 }
-window.__bb = {
+if (new URLSearchParams(location.search).has('level')) window.__bb = {
   levels: LEVELS.length,
   wakeAll: () => blocks.forEach(b => b.body.wakeUp()),
   // 화면 갱신 없이 물리만 sec초 진행(숨겨진 창에서 테스트용). 실제 루프와 같은 깨우기 규칙을 쓴다.
