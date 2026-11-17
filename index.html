@@ -468,6 +468,14 @@ function tick(now) {
   if (keys['a'] || keys['arrowleft']) { camAngle -= dt * 1.5; placeCamera(); }
   if (keys['d'] || keys['arrowright']) { camAngle += dt * 1.5; placeCamera(); }
 
+  // 잠든 블록은 받침이 사라져도 스스로 깨어나지 않아 공중에 뜬다.
+  // 무엇이든 움직이는 동안에는 남은 블록을 모두 깨워 둔다.
+  const SLEEPING = CANNON.Body.SLEEPING;
+  const active =
+    balls.some(b => b.body.sleepState !== SLEEPING && b.body.position.y > -3) ||
+    blocks.some(b => !b.out && b.body.sleepState !== SLEEPING && b.body.velocity.lengthSquared() > 0.01);
+  if (active) for (const b of blocks) if (!b.out && b.body.sleepState === SLEEPING) b.body.wakeUp();
+
   world.fixedStep(1 / 60, dt);
 
   for (const b of blocks) {
