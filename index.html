@@ -62,6 +62,8 @@
   .card h1 { margin: 0 0 10px; font-size: 26px; font-weight: 800; letter-spacing: -.01em; background: linear-gradient(180deg, #ffffff, #c4ccff); -webkit-background-clip: text; background-clip: text; color: transparent; }
   .card p { margin: 0 0 20px; font-size: 14px; line-height: 1.65; color: rgba(226,230,255,.82); word-break: keep-all; }
   .card button { width: 100%; font: inherit; font-weight: 800; font-size: 16px; letter-spacing: .06em; padding: 13px; border: 0; border-radius: 14px; color: #1d1604; background: linear-gradient(180deg, #f9e4a8, #e2b655); box-shadow: 0 8px 22px rgba(226,182,85,.35), inset 0 1px 0 rgba(255,255,255,.65); cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .card button.ghost { margin-top: 8px; padding: 9px; background: none; box-shadow: none; color: rgba(226,230,255,.7); font-size: 13px; font-weight: 600; letter-spacing: 0; }
+  .card button.ghost:active { filter: none; color: #fff; }
   .card button:active { transform: translateY(1px); filter: brightness(.95); }
   .card button:hover { filter: brightness(1.12); }
 </style>
@@ -94,7 +96,8 @@
   <h1 id="ov-title">블록 브레이커 3D</h1>
   <p id="ov-text">공을 쏴서 섬 위의 블록을 모두 떨어뜨리세요.<br>공은 한정되어 있습니다!</p>
   <button id="ov-btn">시작</button>
-  <div id="ver">v13</div>
+  <button id="ov-new" class="ghost" hidden>처음부터 시작</button>
+  <div id="ver">v14</div>
 </div></div>
 
 <script type="module">
@@ -462,6 +465,22 @@ const START_LEVEL = Math.min(LEVELS.length, Math.max(1, parseInt(new URLSearchPa
 let level = 0, ballsLeft = 0, score = 0, state = 'menu', endTimer = 0, levelScore = 0;
 const $ = id => document.getElementById(id);
 
+// ---------- 진행 저장: 다음에 시작할 레벨과 누적 점수를 기기에 기억 ----------
+const SAVE_KEY = 'bb-progress';
+function loadProgress() {
+  try {
+    const d = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (d && Number.isInteger(d.level) && d.level > 0 && d.level < LEVELS.length) return { level: d.level, score: +d.score || 0 };
+  } catch {}
+  return null;
+}
+function saveProgress(lv, sc) {
+  try {
+    if (lv > 0) localStorage.setItem(SAVE_KEY, JSON.stringify({ level: lv, score: sc }));
+    else localStorage.removeItem(SAVE_KEY);
+  } catch {}
+}
+
 function clearLevel() {
   for (const b of blocks) { world.removeBody(b.body); scene.remove(b.mesh); b.mesh.geometry.dispose(); }
   for (const b of balls) { world.removeBody(b.body); scene.remove(b.mesh); b.mesh.material.dispose(); }
@@ -494,6 +513,7 @@ function updateHud() {
 
 function showOverlay(title, text, btn, onClick) {
   $('card').classList.add('plain'); // 로고는 첫 화면에만
+  $('ov-new').hidden = true;
   $('ov-title').textContent = title;
   $('ov-text').innerHTML = text;
   $('ov-btn').textContent = btn;
@@ -809,6 +829,7 @@ function tick(now) {
       const bonus = ballsLeft * 150;
       score += levelScore + bonus;
       levelScore = 0;
+      saveProgress(level + 1 < LEVELS.length ? level + 1 : 0, score);
       updateHud();
       if (level + 1 < LEVELS.length) {
         showOverlay('클리어!', `남은 공 보너스 +${bonus}<br>누적 점수 ${score}`, '다음 레벨', () => startLevel(level + 1));
@@ -832,7 +853,16 @@ function tick(now) {
 }
 requestAnimationFrame(tick);
 
-$('ov-btn').onclick = () => { score = 0; startLevel(START_LEVEL); };
+// 첫 화면: 저장된 진행이 있으면 '이어하기'를 앞에 둔다 (?level=N 테스트 시작은 저장을 무시)
+const saved = new URLSearchParams(location.search).has('level') ? null : loadProgress();
+if (saved) {
+  $('ov-btn').textContent = `이어하기 · 레벨 ${saved.level + 1}`;
+  $('ov-btn').onclick = () => { score = saved.score; startLevel(saved.level); };
+  $('ov-new').hidden = false;
+  $('ov-new').onclick = () => { sfx.click(); saveProgress(0, 0); score = 0; startLevel(0); startMusic(); };
+} else {
+  $('ov-btn').onclick = () => { score = 0; startLevel(START_LEVEL); };
+}
 window.__bb = {
   levels: LEVELS.length,
   wakeAll: () => blocks.forEach(b => b.body.wakeUp()),
@@ -848,6 +878,8 @@ window.__bb = {
   },
   fallen: () => blocks.filter(b => b.body.position.y < -1.5).length,
   go: i => startLevel(i),
+  dropAll: () => blocks.forEach(b => { b.body.position.y = -5; }),
+  tick: t => tick(t),
   project: (x, y, z) => { const v = new THREE.Vector3(x, y, z).project(camera); return [(v.x + 1) / 2 * innerWidth, (1 - v.y) / 2 * innerHeight]; },
   ballPos: () => balls.map(b => [b.body.position.x, b.body.position.y, b.body.position.z].map(v => +v.toFixed(1))),
   pos: () => blocks.map(b => [b.body.position.x, b.body.position.y, b.body.position.z]),
