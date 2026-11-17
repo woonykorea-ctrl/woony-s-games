@@ -34,7 +34,7 @@
     #hud { width: calc(100% - 16px); max-width: none; padding: 10px 2px; }
     #hud .cell { padding: 0 8px; flex: 1 1 auto; }
     #hud .k { font-size: 10.5px; }
-    #hud .v { font-size: 17px; }
+    #hud .v { font-size: 16px; }
     #hud .dots { gap: 3px; height: 20px; }
     #hud .dots i { width: 7px; height: 7px; }
     #mute { width: 38px; height: 38px; margin: 0 5px 0 0; }
@@ -94,7 +94,7 @@
   <h1 id="ov-title">블록 브레이커 3D</h1>
   <p id="ov-text">공을 쏴서 섬 위의 블록을 모두 떨어뜨리세요.<br>공은 한정되어 있습니다!</p>
   <button id="ov-btn">시작</button>
-  <div id="ver">v11</div>
+  <div id="ver">v12</div>
 </div></div>
 
 <script type="module">
@@ -373,7 +373,37 @@ const LEVELS = [
     for (let y = 0; y < 4; y++) for (const x of [-2.5, 2.5]) addBlock(x, 0.5 + y, 1.5);
     addBlock(0, 0.5, 1.5, 1, 1, 1); addBlock(0, 1.5, 1.5, 1, 1, 1);
   }},
+  { name: '아치 게이트', balls: 8, build() {
+    for (const x of [-1.5, 1.5]) for (const z of [-0.5, 0.5]) for (let y = 0; y < 4; y++) addBlock(x, 0.5 + y, z);
+    for (const z of [-0.5, 0.5]) addBlock(0, 4.25, z, 4.2, 0.5, 1);       // 상인방
+    for (const x of [-1, 0, 1]) addBlock(x, 5, 0);                         // 지붕 위 블록
+    for (let y = 0; y < 3; y++) addBlock(0, 0.5 + y, 0);                   // 문 안쪽 기둥
+  }},
+  { name: '큐브 산', balls: 9, build() {
+    for (let k = 0; k < 4; k++) {
+      const n = 4 - k;
+      for (let i = 0; i < n; i++) for (let j = 0; j < n; j++)
+        addBlock(i - (n - 1) / 2, 0.5 + k, j - (n - 1) / 2);
+    }
+  }},
+  { name: '쌍둥이 다리', balls: 8, build() {
+    for (const x of [-2.5, 2.5]) for (const z of [-0.5, 0.5]) for (let y = 0; y < 4; y++) addBlock(x, 0.5 + y, z);
+    for (const z of [-0.5, 0.5]) addBlock(0, 4.2, z, 6, 0.4, 1);           // 다리 상판
+    for (const x of [-1.2, 1.2]) for (const z of [-0.5, 0.5]) addBlock(x, 4.9, z);
+    addBlock(0, 4.9, 0); addBlock(0, 5.9, 0);
+  }},
+  { name: '소용돌이 탑', balls: 7, build() {
+    const t = 0.5;
+    for (let layer = 0; layer < 11; layer++) {
+      const r = layer * 0.45, y = t / 2 + layer * t;
+      for (let k = -1; k <= 1; k++)
+        addBlock(Math.cos(r) * k, y, -Math.sin(r) * k, 0.95, t, 3, r);
+    }
+  }},
 ];
+
+// 테스트용: ?level=N 으로 해당 레벨에서 시작, window.__bb 로 상태 확인
+const START_LEVEL = Math.min(LEVELS.length, Math.max(1, parseInt(new URLSearchParams(location.search).get('level')) || 1)) - 1;
 
 // ---------- 상태 ----------
 let level = 0, ballsLeft = 0, score = 0, state = 'menu', endTimer = 0, levelScore = 0;
@@ -749,7 +779,12 @@ function tick(now) {
 }
 requestAnimationFrame(tick);
 
-$('ov-btn').onclick = () => { score = 0; startLevel(0); };
+$('ov-btn').onclick = () => { score = 0; startLevel(START_LEVEL); };
+window.__bb = {
+  levels: LEVELS.length,
+  wakeAll: () => blocks.forEach(b => b.body.wakeUp()),
+  pos: () => blocks.map(b => [b.body.position.x, b.body.position.y, b.body.position.z]),
+};
 </script>
 </body>
 </html>
