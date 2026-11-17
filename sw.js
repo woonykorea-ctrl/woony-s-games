@@ -1,5 +1,5 @@
 // 오프라인 실행용 캐시. 파일을 바꾸면 버전 숫자를 올린다.
-const CACHE = 'block-breaker-v6';
+const CACHE = 'block-breaker-v7';
 const FILES = [
   './',
   'index.html',
