@@ -16,6 +16,7 @@
   canvas { display: block; cursor: crosshair; touch-action: none; }
   #hud { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
   .pill { background: linear-gradient(135deg, rgba(255,61,176,.55), rgba(88,60,255,.55) 55%, rgba(25,211,243,.55)); border: 1px solid rgba(255,255,255,.35); padding: 7px 12px; border-radius: 999px; font-weight: 700; font-size: 14px; backdrop-filter: blur(6px); text-shadow: 0 1px 2px rgba(0,0,0,.5); box-shadow: 0 2px 12px rgba(255,61,176,.35); }
+  #ver { margin-top: 14px; font-size: 11px; opacity: .55; }
   #mute { pointer-events: auto; margin-left: auto; color: #fff; font-family: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; }
   #help { position: fixed; bottom: 16px; left: 16px; font-size: 13px; font-weight: 600; text-shadow: 0 1px 3px rgba(40,0,60,.9); text-align: center; pointer-events: none; padding: 6px 14px; background: rgba(40,10,80,.45); border-radius: 999px; white-space: nowrap; }
   #touch { position: fixed; left: 0; right: 0; bottom: calc(14px + env(safe-area-inset-bottom)); display: none; justify-content: space-between; padding: 0 14px; pointer-events: none; }
@@ -55,6 +56,7 @@
   <h1 id="ov-title">블록 브레이커 3D</h1>
   <p id="ov-text">공을 던져 공중 섬 위의 블록을 모두 떨어뜨리세요.<br>공은 한정되어 있습니다!</p>
   <button id="ov-btn">시작</button>
+  <div id="ver">v6</div>
 </div></div>
 
 <script type="module">
@@ -377,7 +379,7 @@ function showOverlay(title, text, btn, onClick) {
 // ---------- 효과음 (파일 없이 Web Audio로 합성) ----------
 let actx = null, master = null, noiseBuf = null, lastHit = 0;
 let musicGain = null, musicTimer = null, nextStep = 0, stepIdx = 0;
-const VOLUME = 2.2; // 전체 음량(리미터 앞)
+const VOLUME = 3.2; // 전체 음량(리미터 앞)
 const STEP = 0.3; // 배경음 한 박(8분음표) 길이(초)
 let muted = false;
 try { muted = localStorage.getItem('bb-muted') === '1'; } catch {}
@@ -389,9 +391,15 @@ function audio() {
     master.gain.value = VOLUME;
     // 리미터: 크게 키워도 소리가 깨지지 않게 눌러 준다
     const limiter = actx.createDynamicsCompressor();
-    limiter.threshold.value = -10; limiter.knee.value = 6; limiter.ratio.value = 12;
+    limiter.threshold.value = -14; limiter.knee.value = 4; limiter.ratio.value = 20;
     limiter.attack.value = 0.003; limiter.release.value = 0.15;
     master.connect(limiter).connect(actx.destination);
+    // 출력 크기 측정용(디버그): window.bbLevel()이 현재 최대 진폭(0~1)을 돌려준다
+    const meter = actx.createAnalyser();
+    meter.fftSize = 2048;
+    limiter.connect(meter);
+    const mbuf = new Float32Array(meter.fftSize);
+    window.bbLevel = () => { meter.getFloatTimeDomainData(mbuf); let m = 0; for (const v of mbuf) m = Math.max(m, Math.abs(v)); return m; };
     noiseBuf = actx.createBuffer(1, actx.sampleRate * 0.5, actx.sampleRate);
     const d = noiseBuf.getChannelData(0);
     for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -401,8 +409,12 @@ function audio() {
     const delay = actx.createDelay(1), fb = actx.createGain();
     delay.delayTime.value = STEP * 1.5;
     fb.gain.value = 0.35;
-    musicGain.connect(master);
-    musicGain.connect(delay);
+    // 밝은 파형(톱니·사각파)을 쓰되 너무 날카롭지 않게 고음을 살짝 깎는다
+    const soften = actx.createBiquadFilter();
+    soften.type = 'lowpass'; soften.frequency.value = 3800;
+    musicGain.connect(soften);
+    soften.connect(master);
+    soften.connect(delay);
     delay.connect(fb).connect(delay);
     delay.connect(master);
   }
@@ -438,7 +450,7 @@ function noise(dur, { vol = 0.3, freq = 1000, delay = 0 } = {}) {
 const SCALE = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26, 28, 31, 33, 36];
 const sfx = {
   // 발사: 낮게 떨어지는 '퐁' + 바람 소리
-  shoot() { tone(440, 0.2, { type: 'triangle', vol: 0.6, slide: 0.35 }); noise(0.14, { vol: 0.45, freq: 1800 }); },
+  shoot() { tone(880, 0.2, { type: 'square', vol: 0.45, slide: 0.3 }); noise(0.16, { vol: 0.6, freq: 2400 }); },
   // 충돌: 세기에 따라 커지는 둔탁한 소리
   hit(v) {
     const now = performance.now();
@@ -446,17 +458,17 @@ const sfx = {
     lastHit = now;
     const k = Math.min(1, v / 25);
     // 폰 스피커는 저음이 거의 안 나므로 200Hz 위쪽으로 낸다
-    tone(200 + Math.random() * 90, 0.13, { type: 'triangle', vol: 0.3 + 0.5 * k, slide: 0.55 });
-    noise(0.08, { vol: 0.2 + 0.4 * k, freq: 900 + 900 * k });
+    tone(300 + Math.random() * 120, 0.13, { type: 'square', vol: 0.25 + 0.4 * k, slide: 0.5 });
+    noise(0.1, { vol: 0.35 + 0.5 * k, freq: 1600 + 1200 * k });
   },
   // 블록 낙하: 떨어뜨릴수록 음이 올라간다
   fall(n) {
     const f = 523.25 * Math.pow(2, SCALE[Math.min(n, SCALE.length - 1)] / 12);
-    tone(f, 0.22, { type: 'triangle', vol: 0.5 });
-    tone(f * 2, 0.15, { vol: 0.2, delay: 0.03 });
+    tone(f, 0.25, { type: 'square', vol: 0.35 });
+    tone(f * 2, 0.18, { type: 'triangle', vol: 0.35, delay: 0.03 });
   },
-  clear() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.3, { type: 'triangle', vol: 0.5, delay: i * 0.1 })); },
-  fail() { [392, 330, 262, 196].forEach((f, i) => tone(f, 0.3, { type: 'sawtooth', vol: 0.22, delay: i * 0.16 })); },
+  clear() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.3, { type: 'square', vol: 0.4, delay: i * 0.1 })); },
+  fail() { [392, 330, 262, 196].forEach((f, i) => tone(f, 0.3, { type: 'sawtooth', vol: 0.35, delay: i * 0.16 })); },
   click() { tone(700, 0.07, { type: 'square', vol: 0.18 }); tone(1050, 0.08, { type: 'square', vol: 0.15, delay: 0.05 }); },
 };
 // ---------- 배경음 (잔잔한 우주풍 반복 음악, 합성) ----------
@@ -480,12 +492,12 @@ function scheduleMusic() {
     const chord = CHORDS[Math.floor(stepIdx / 16) % CHORDS.length];
     const s = stepIdx % 16;
     if (s === 0) {
-      for (const m of chord) mNote(mtof(m + 12), nextStep, STEP * 17, 'triangle', 0.07, 1.0); // 패드
+      for (const m of chord) mNote(mtof(m + 12), nextStep, STEP * 17, 'sawtooth', 0.05, 1.0); // 패드
       mNote(mtof(chord[0] - 12), nextStep, STEP * 15, 'triangle', 0.1, 0.05);                 // 베이스
-      mNote(mtof(chord[0]), nextStep, STEP * 15, 'triangle', 0.08, 0.05);                      // 베이스(폰 스피커용 한 옥타브 위)
+      mNote(mtof(chord[0]), nextStep, STEP * 15, 'square', 0.05, 0.05);                      // 베이스(폰 스피커용 한 옥타브 위)
     }
     const up = s >= 8 && s % 4 === 3 ? 12 : 0;
-    mNote(mtof(chord[ARP[s % 8]] + 24 + up), nextStep, STEP * 1.8, 'triangle', 0.1); // 아르페지오
+    mNote(mtof(chord[ARP[s % 8]] + 24 + up), nextStep, STEP * 1.8, 'square', 0.09); // 아르페지오
     nextStep += STEP;
     stepIdx++;
   }

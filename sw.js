@@ -1,5 +1,5 @@
 // 오프라인 실행용 캐시. 파일을 바꾸면 버전 숫자를 올린다.
-const CACHE = 'block-breaker-v1';
+const CACHE = 'block-breaker-v6';
 const FILES = [
   './',
   'index.html',
@@ -26,7 +26,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: 'no-cache' }) // 브라우저 캐시를 건너뛰어 새 버전이 바로 보이게 한다
       .then(res => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy));
