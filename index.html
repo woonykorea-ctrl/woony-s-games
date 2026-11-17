@@ -25,6 +25,10 @@
   #touch .grp { display: flex; gap: 2px; }
   /* 회전 화살표는 테두리 원 없이 화살표만 보인다 (터치 영역은 그대로 넉넉하게) */
   #touch .grp button { width: 54px; height: 60px; border: 0; border-radius: 12px; background: none; box-shadow: none; font-size: 30px; text-shadow: 0 0 10px rgba(25,211,243,.95), 0 1px 3px #000; }
+  /* 다시 시작: 원 없이 아이콘 + 글자 */
+  #touch #t-reset { width: 60px; height: 60px; border: 0; border-radius: 12px; background: none; box-shadow: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-family: inherit; font-size: 12px; font-weight: 700; text-shadow: 0 0 8px rgba(25,211,243,.95), 0 1px 3px #000; }
+  #touch #t-reset svg { width: 26px; height: 26px; filter: drop-shadow(0 0 5px rgba(25,211,243,.95)); }
+  #touch #t-reset:active { color: #ffc93c; transform: scale(1.12); }
   #touch .grp button.on { background: none; color: #ffc93c; transform: scale(1.2); }
   @media (pointer: coarse) { #touch { display: flex; } #help { display: none; } }
   #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(4,4,14,.5); pointer-events: none; }
@@ -53,13 +57,16 @@
 <div id="help">클릭: 공 던지기 · A/D 또는 ←/→: 시점 회전 · R: 레벨 다시 시작</div>
 <div id="touch">
   <div class="grp"><button id="t-left" aria-label="왼쪽으로 회전">◀</button><button id="t-right" aria-label="오른쪽으로 회전">▶</button></div>
-  <button id="t-reset" aria-label="레벨 다시 시작">↻</button>
+  <button id="t-reset" aria-label="레벨 다시 시작">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>
+    <span>다시</span>
+  </button>
 </div>
 <div id="overlay"><div class="card">
   <h1 id="ov-title">블록 브레이커 3D</h1>
   <p id="ov-text">공을 던져 공중 섬 위의 블록을 모두 떨어뜨리세요.<br>공은 한정되어 있습니다!</p>
   <button id="ov-btn">시작</button>
-  <div id="ver">v7</div>
+  <div id="ver">v8</div>
 </div></div>
 
 <script type="module">
