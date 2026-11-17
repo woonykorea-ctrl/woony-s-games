@@ -1,7 +1,7 @@
 {
   "name": "블록 브레이커 3D",
   "short_name": "블록 브레이커",
-  "description": "공을 던져 공중 섬 위의 블록을 모두 떨어뜨리는 3D 물리 게임",
+  "description": "공을 쏴서 섬 위의 블록을 모두 떨어뜨리는 3D 물리 게임",
   "lang": "ko",
   "start_url": "./",
   "scope": "./",
