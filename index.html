@@ -1,0 +1,542 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0f1724">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="images/icon-192.png">
+<link rel="apple-touch-icon" href="images/icon-192.png">
+<title>블록 브레이커 3D</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0f1724; font-family: system-ui, "Malgun Gothic", sans-serif; color: #fff; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  canvas { display: block; cursor: crosshair; touch-action: none; }
+  #hud { position: fixed; top: calc(12px + env(safe-area-inset-top)); left: 12px; right: 12px; display: flex; gap: 8px; flex-wrap: wrap; pointer-events: none; }
+  .pill { background: linear-gradient(135deg, rgba(255,61,176,.55), rgba(88,60,255,.55) 55%, rgba(25,211,243,.55)); border: 1px solid rgba(255,255,255,.35); padding: 7px 12px; border-radius: 999px; font-weight: 700; font-size: 14px; backdrop-filter: blur(6px); text-shadow: 0 1px 2px rgba(0,0,0,.5); box-shadow: 0 2px 12px rgba(255,61,176,.35); }
+  #help { position: fixed; bottom: 16px; left: 16px; font-size: 13px; font-weight: 600; text-shadow: 0 1px 3px rgba(40,0,60,.9); text-align: center; pointer-events: none; padding: 6px 14px; background: rgba(40,10,80,.45); border-radius: 999px; white-space: nowrap; }
+  #touch { position: fixed; left: 0; right: 0; bottom: calc(14px + env(safe-area-inset-bottom)); display: none; justify-content: space-between; padding: 0 14px; pointer-events: none; }
+  #touch button { pointer-events: auto; width: 64px; height: 64px; border-radius: 50%; border: 2px solid rgba(255,255,255,.5); background: linear-gradient(135deg, rgba(88,60,255,.6), rgba(25,211,243,.6)); box-shadow: 0 2px 14px rgba(25,211,243,.4); color: #fff; font-size: 26px; touch-action: none; -webkit-tap-highlight-color: transparent; }
+  #touch button.on { background: rgba(255,138,61,.7); }
+  #touch .grp { display: flex; gap: 10px; }
+  @media (pointer: coarse) { #touch { display: flex; } #help { display: none; } }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(4,4,14,.5); pointer-events: none; }
+  #overlay.hidden { display: none; }
+  .card { pointer-events: auto; background: linear-gradient(160deg, rgba(60,22,120,.92), rgba(140,30,110,.92)); border: 2px solid rgba(255,255,255,.3); padding: 28px 32px; border-radius: 20px; text-align: center; max-width: 360px; margin: 16px; box-shadow: 0 10px 50px rgba(255,61,176,.45), 0 0 0 6px rgba(25,211,243,.15); }
+  .card h1 { margin: 0 0 8px; font-size: 28px; background: linear-gradient(90deg, #ffc93c, #ff3db0, #19d3f3); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .card p { margin: 0 0 20px; opacity: .95; line-height: 1.5; }
+  .card button { font: inherit; font-weight: 800; font-size: 17px; padding: 11px 30px; border: 0; border-radius: 999px; background: linear-gradient(90deg, #ffc93c, #ff7a2f, #ff3db0); color: #2a0a3a; cursor: pointer; box-shadow: 0 4px 18px rgba(255,122,47,.6); }
+  .card button:hover { filter: brightness(1.12); }
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "./lib/three.module.js",
+  "cannon-es": "./lib/cannon-es.js"
+} }
+</script>
+</head>
+<body>
+<div id="hud">
+  <div class="pill" id="lvl">레벨 1</div>
+  <div class="pill" id="blocks">블록 0/0</div>
+  <div class="pill" id="balls">공 ●●●</div>
+  <div class="pill" id="score">점수 0</div>
+</div>
+<div id="help">클릭: 공 던지기 · A/D 또는 ←/→: 시점 회전 · R: 레벨 다시 시작</div>
+<div id="touch">
+  <div class="grp"><button id="t-left" aria-label="왼쪽으로 회전">◀</button><button id="t-right" aria-label="오른쪽으로 회전">▶</button></div>
+  <button id="t-reset" aria-label="레벨 다시 시작">↻</button>
+</div>
+<div id="overlay"><div class="card">
+  <h1 id="ov-title">블록 브레이커 3D</h1>
+  <p id="ov-text">공을 던져 공중 섬 위의 블록을 모두 떨어뜨리세요.<br>공은 한정되어 있습니다!</p>
+  <button id="ov-btn">시작</button>
+</div></div>
+
+<script type="module">
+import * as THREE from 'three';
+import * as CANNON from 'cannon-es';
+
+// ---------- 렌더러 / 씬 ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x04040c);
+scene.fog = new THREE.Fog(0x06050f, 45, 120);
+
+// 노을빛 그라데이션 + 오로라가 흐르는 하늘
+const skyMat = new THREE.ShaderMaterial({
+  side: THREE.BackSide, depthWrite: false, fog: false,
+  uniforms: { t: { value: 0 } },
+  vertexShader: `varying vec3 vDir; void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `varying vec3 vDir; uniform float t;
+    void main(){
+      float h = vDir.y * 0.5 + 0.5;
+      // 어두운 우주: 거의 검은 남색 바탕에 옅은 성운만 은은하게
+      vec3 c = mix(vec3(0.030, 0.018, 0.070), vec3(0.008, 0.010, 0.030), smoothstep(0.0, 1.0, h));
+      float a = atan(vDir.z, vDir.x);
+      float w1 = sin(a * 2.0 + t * 0.05 + h * 6.0) * 0.5 + 0.5;
+      float w2 = sin(a * 3.0 - t * 0.04 - h * 9.0) * 0.5 + 0.5;
+      float band = smoothstep(0.15, 0.5, h) * (1.0 - smoothstep(0.55, 0.95, h));
+      c += (vec3(0.20, 0.06, 0.32) * w1 * w1 + vec3(0.03, 0.14, 0.30) * w2 * w2) * band * 0.35;
+      gl_FragColor = vec4(c, 1.0);
+    }`,
+});
+scene.add(new THREE.Mesh(new THREE.SphereGeometry(140, 32, 20), skyMat));
+
+const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 200);
+let camAngle = 0;
+const camTarget = new THREE.Vector3(0, 2.5, 0);
+function placeCamera() {
+  camera.position.set(Math.sin(camAngle) * 16, 7, Math.cos(camAngle) * 16);
+  camera.lookAt(camTarget);
+}
+placeCamera();
+
+scene.add(new THREE.HemisphereLight(0xd8e0ff, 0x2a2060, 0.85));
+const glowA = new THREE.PointLight(0x22e0ff, 120, 40);
+const glowB = new THREE.PointLight(0xff3db0, 120, 40);
+scene.add(glowA, glowB);
+const sun = new THREE.DirectionalLight(0xfff0dd, 1.6);
+sun.position.set(8, 16, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -10, right: 10, top: 10, bottom: -10, near: 1, far: 50 });
+scene.add(sun);
+
+// 배경 별
+{
+  const g = new THREE.BufferGeometry();
+  const pts = [], cols = [], c = new THREE.Color();
+  for (let i = 0; i < 900; i++) {
+    const v = new THREE.Vector3().randomDirection().multiplyScalar(80 + Math.random() * 40);
+    pts.push(v.x, v.y, v.z);
+    c.setHSL(Math.random(), 0.9, 0.75);
+    cols.push(c.r, c.g, c.b);
+  }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ size: 0.7, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })));
+}
+
+// 섬 주위를 도는 빛나는 수정들과 고리
+const VIVID = [0xff3b6b, 0xffc93c, 0x2ee59d, 0x3d8bff, 0xb264ff, 0xff7a2f, 0x19d3f3];
+const crystals = [];
+for (let i = 0; i < 16; i++) {
+  const col = VIVID[i % VIVID.length];
+  const mesh = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.5 + Math.random() * 0.7),
+    new THREE.MeshStandardMaterial({ color: col, emissive: col, emissiveIntensity: 0.7, roughness: 0.2, metalness: 0.3, flatShading: true })
+  );
+  scene.add(mesh);
+  crystals.push({ mesh, r: 15 + Math.random() * 12, ang: Math.random() * Math.PI * 2, y: -5 + Math.random() * 16, speed: (0.04 + Math.random() * 0.08) * (i % 2 ? 1 : -1), spin: 0.5 + Math.random() });
+}
+// 플레이어 쪽 대포: 화면 아래 가운데에 있고, 조준한 곳을 향해 포신이 돈다
+let platMesh;
+const cannon = new THREE.Group();   // 카메라를 따라다니는 받침대
+const pivot = new THREE.Group();    // 조준 방향으로 회전
+const barrel = new THREE.Group();   // 발사 반동으로 앞뒤로 움직임
+const muzzle = new THREE.Object3D();
+const muzzleMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xff7a2f, emissiveIntensity: 1.2 });
+{
+  const body = new THREE.MeshStandardMaterial({ color: 0xf4f0ff, emissive: 0x8877cc, emissiveIntensity: 0.25, metalness: 0.15, roughness: 0.35 });
+  const dark = new THREE.MeshStandardMaterial({ color: 0x5a3fd0, emissive: 0x2a1a80, emissiveIntensity: 0.4, metalness: 0.2, roughness: 0.4 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0x19d3f3, emissive: 0x19d3f3, emissiveIntensity: 0.6, roughness: 0.3 });
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.6, 0.8, 0.3, 24), dark);
+  base.position.y = -0.45;
+  const joint = new THREE.Mesh(new THREE.SphereGeometry(0.42, 24, 16), dark);
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.36, 2.2, 24).rotateX(Math.PI / 2), body);
+  tube.position.z = 1.3;
+  const bands = [0.6, 1.3].map(z => {
+    const b = new THREE.Mesh(new THREE.TorusGeometry(0.38, 0.06, 10, 32), accent);
+    b.position.z = z;
+    return b;
+  });
+  const tip = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.09, 10, 32), muzzleMat);
+  tip.position.z = 2.4;
+  muzzle.position.z = 2.5;
+  barrel.add(tube, ...bands, tip, muzzle);
+  pivot.add(joint, barrel);
+  cannon.add(base, pivot);
+  cannon.scale.setScalar(0.42);
+  scene.add(cannon);
+}
+const aimTarget = new THREE.Vector3(0, 2.5, 0);
+let recoil = 0;
+function updateCannon(dt) {
+  camera.updateMatrixWorld();
+  const halfH = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * 4;
+  cannon.position.set(0, -halfH * 0.84, -4);
+  camera.localToWorld(cannon.position);
+  cannon.quaternion.copy(camera.quaternion);
+  pivot.lookAt(aimTarget);
+  recoil = Math.max(0, recoil - dt * 5);
+  barrel.position.z = -recoil * 0.4;
+}
+
+// 파티클(충돌 불꽃, 공 꼬리, 축하 색종이)
+const P_MAX = 1200;
+const pPos = new Float32Array(P_MAX * 3).fill(-999), pCol = new Float32Array(P_MAX * 3);
+const pVel = new Float32Array(P_MAX * 3), pBase = new Float32Array(P_MAX * 3);
+const pLife = new Float32Array(P_MAX), pSpan = new Float32Array(P_MAX), pGrav = new Float32Array(P_MAX);
+let pNext = 0;
+const pGeo = new THREE.BufferGeometry();
+pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+pGeo.setAttribute('color', new THREE.BufferAttribute(pCol, 3));
+const pPoints = new THREE.Points(pGeo, new THREE.PointsMaterial({ size: 0.32, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+pPoints.frustumCulled = false;
+scene.add(pPoints);
+
+function emit(x, y, z, vx, vy, vz, color, life, grav = 9) {
+  const i = pNext, j = i * 3;
+  pNext = (pNext + 1) % P_MAX;
+  pPos[j] = x; pPos[j + 1] = y; pPos[j + 2] = z;
+  pVel[j] = vx; pVel[j + 1] = vy; pVel[j + 2] = vz;
+  pBase[j] = color.r; pBase[j + 1] = color.g; pBase[j + 2] = color.b;
+  pLife[i] = pSpan[i] = life; pGrav[i] = grav;
+}
+const tmpDir = new THREE.Vector3(), tmpCol = new THREE.Color();
+function burst(pos, color, n, speed, life = 0.9) {
+  for (let k = 0; k < n; k++) {
+    tmpDir.randomDirection().multiplyScalar(speed * (0.3 + Math.random() * 0.7));
+    emit(pos.x, pos.y, pos.z, tmpDir.x, tmpDir.y + speed * 0.3, tmpDir.z, color, life * (0.6 + Math.random() * 0.6));
+  }
+}
+function confetti() {
+  for (let k = 0; k < 400; k++) {
+    tmpCol.set(VIVID[k % VIVID.length]);
+    emit((Math.random() - 0.5) * 9, 5 + Math.random() * 6, (Math.random() - 0.5) * 9,
+      (Math.random() - 0.5) * 4, Math.random() * 5, (Math.random() - 0.5) * 4, tmpCol, 2 + Math.random() * 1.5, 4);
+  }
+}
+function updateParticles(dt) {
+  for (let i = 0; i < P_MAX; i++) {
+    if (pLife[i] <= 0) continue;
+    const j = i * 3;
+    pLife[i] -= dt;
+    if (pLife[i] <= 0) { pPos[j + 1] = -999; continue; }
+    pVel[j + 1] -= pGrav[i] * dt;
+    pPos[j] += pVel[j] * dt; pPos[j + 1] += pVel[j + 1] * dt; pPos[j + 2] += pVel[j + 2] * dt;
+    const k = pLife[i] / pSpan[i];
+    pCol[j] = pBase[j] * k; pCol[j + 1] = pBase[j + 1] * k; pCol[j + 2] = pBase[j + 2] * k;
+  }
+  pGeo.attributes.position.needsUpdate = true;
+  pGeo.attributes.color.needsUpdate = true;
+}
+
+// ---------- 물리 월드 ----------
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+world.allowSleep = true;
+world.solver.iterations = 12;
+world.broadphase = new CANNON.SAPBroadphase(world);
+
+const matBlock = new CANNON.Material('block');
+const matBall = new CANNON.Material('ball');
+const matGround = new CANNON.Material('ground');
+world.addContactMaterial(new CANNON.ContactMaterial(matBlock, matBlock, { friction: 0.45, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(matBlock, matGround, { friction: 0.5, restitution: 0.05 }));
+world.addContactMaterial(new CANNON.ContactMaterial(matBall, matBlock, { friction: 0.3, restitution: 0.3 }));
+world.addContactMaterial(new CANNON.ContactMaterial(matBall, matGround, { friction: 0.4, restitution: 0.4 }));
+
+// 공중 섬(플랫폼)
+const PLAT = { w: 7, h: 1, d: 7 };
+{
+  const body = new CANNON.Body({ mass: 0, material: matGround, shape: new CANNON.Box(new CANNON.Vec3(PLAT.w / 2, PLAT.h / 2, PLAT.d / 2)) });
+  body.position.set(0, -PLAT.h / 2, 0);
+  world.addBody(body);
+  // 파스텔 체크무늬 바닥
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = 256;
+  const cx = cv.getContext('2d');
+  for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) {
+    cx.fillStyle = (i + j) % 2 ? '#3fe0a0' : '#2bc4c9';
+    cx.fillRect(i * 32, j * 32, 32, 32);
+  }
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.magFilter = THREE.NearestFilter;
+  const side = new THREE.MeshStandardMaterial({ color: 0xff5fa8, emissive: 0xff2d8a, emissiveIntensity: 0.25, roughness: 0.6 });
+  const top = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.8 });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(PLAT.w, PLAT.h, PLAT.d), [side, side, top, side, side, side]);
+  mesh.position.copy(body.position);
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  platMesh = mesh;
+}
+
+// ---------- 게임 오브젝트 ----------
+const blocks = [];  // { body, mesh, out }
+const balls = [];   // { body, mesh, born }
+const COLORS = VIVID;
+let ballCount = 0;
+
+function addBlock(x, y, z, sx = 1, sy = 1, sz = 1, rotY = 0) {
+  const body = new CANNON.Body({
+    mass: sx * sy * sz,
+    material: matBlock,
+    shape: new CANNON.Box(new CANNON.Vec3(sx / 2, sy / 2, sz / 2)),
+    sleepSpeedLimit: 0.15,
+    sleepTimeLimit: 0.5,
+  });
+  body.position.set(x, y, z);
+  body.quaternion.setFromEuler(0, rotY, 0);
+  world.addBody(body);
+  body.sleep(); // 초기 탑이 흔들리지 않도록 잠든 상태로 시작
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(sx, sy, sz),
+    new THREE.MeshStandardMaterial({ color: COLORS[blocks.length % COLORS.length], emissive: COLORS[blocks.length % COLORS.length], emissiveIntensity: 0.22, roughness: 0.35, metalness: 0.1 })
+  );
+  mesh.castShadow = mesh.receiveShadow = true;
+  scene.add(mesh);
+  const blk = { body, mesh, out: false };
+  body.blockRef = blk;
+  blocks.push(blk);
+}
+
+const LEVELS = [
+  { name: '피라미드', balls: 6, build() {
+    const n = 4;
+    for (let row = 0; row < n; row++)
+      for (let i = 0; i < n - row; i++)
+        addBlock(i - (n - row - 1) / 2, 0.5 + row, 0);
+  }},
+  { name: '쌍둥이 탑', balls: 7, build() {
+    for (let y = 0; y < 6; y++)
+      for (const x of [-1.6, 1.6])
+        for (const z of [-0.5, 0.5])
+          addBlock(x + (z > 0 ? 0 : 0), 0.5 + y, z, 1, 1, 1);
+  }},
+  { name: '젠가 타워', balls: 8, build() {
+    const t = 0.5, L = 3;
+    for (let layer = 0; layer < 9; layer++) {
+      const y = t / 2 + layer * t;
+      for (let k = -1; k <= 1; k++) {
+        if (layer % 2 === 0) addBlock(k * 1.0, y, 0, 0.95, t, L);
+        else addBlock(0, y, k * 1.0, L, t, 0.95);
+      }
+    }
+  }},
+  { name: '성벽', balls: 9, build() {
+    for (let row = 0; row < 5; row++) {
+      const off = row % 2 ? 0.5 : 0;
+      for (let i = -2; i <= 2 - (row % 2); i++) addBlock(i * 1.0 + off, 0.25 + row * 0.5, -1, 1, 0.5, 0.6);
+    }
+    for (let y = 0; y < 4; y++) for (const x of [-2.5, 2.5]) addBlock(x, 0.5 + y, 1.5);
+    addBlock(0, 0.5, 1.5, 1, 1, 1); addBlock(0, 1.5, 1.5, 1, 1, 1);
+  }},
+];
+
+// ---------- 상태 ----------
+let level = 0, ballsLeft = 0, score = 0, state = 'menu', endTimer = 0, levelScore = 0;
+const $ = id => document.getElementById(id);
+
+function clearLevel() {
+  for (const b of blocks) { world.removeBody(b.body); scene.remove(b.mesh); b.mesh.geometry.dispose(); }
+  for (const b of balls) { world.removeBody(b.body); scene.remove(b.mesh); b.mesh.material.dispose(); }
+  blocks.length = 0; balls.length = 0;
+}
+
+function startLevel(i) {
+  clearLevel();
+  level = i;
+  LEVELS[i].build();
+  ballsLeft = LEVELS[i].balls;
+  levelScore = 0;
+  state = 'play';
+  endTimer = 0;
+  $('overlay').classList.add('hidden');
+  updateHud();
+}
+
+function knockedCount() { return blocks.filter(b => b.out).length; }
+
+function updateHud() {
+  $('lvl').textContent = `레벨 ${level + 1} · ${LEVELS[level].name}`;
+  $('blocks').textContent = `블록 ${knockedCount()}/${blocks.length}`;
+  $('balls').textContent = '공 ' + ('●'.repeat(ballsLeft) || '없음');
+  $('score').textContent = `점수 ${score + levelScore}`;
+}
+
+function showOverlay(title, text, btn, onClick) {
+  $('ov-title').textContent = title;
+  $('ov-text').innerHTML = text;
+  $('ov-btn').textContent = btn;
+  $('ov-btn').onclick = onClick;
+  $('overlay').classList.remove('hidden');
+}
+
+// ---------- 공 던지기 ----------
+const ballGeo = new THREE.SphereGeometry(0.35, 24, 16);
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+const nextColor = () => new THREE.Color().setHSL((ballCount * 0.17) % 1, 1, 0.6);
+muzzleMat.emissive.copy(nextColor());
+
+// 포인터가 가리키는 지점(블록·바닥에 닿는 곳)을 조준점으로 삼는다
+function aimAt(e) {
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(mouse, camera);
+  const targets = blocks.filter(b => b.mesh.visible).map(b => b.mesh);
+  targets.push(platMesh);
+  const hit = raycaster.intersectObjects(targets, false)[0];
+  if (hit) aimTarget.copy(hit.point);
+  else raycaster.ray.at(18, aimTarget);
+}
+renderer.domElement.addEventListener('pointermove', aimAt);
+
+const SPEED = 32;
+renderer.domElement.addEventListener('pointerdown', e => {
+  if (state !== 'play' || ballsLeft <= 0) return;
+  aimAt(e);
+  updateCannon(0);
+  const start = muzzle.getWorldPosition(new THREE.Vector3());
+  const dir = aimTarget.clone().sub(start);
+  const dist = dir.length();
+  dir.normalize();
+
+  const body = new CANNON.Body({ mass: 4, material: matBall, shape: new CANNON.Sphere(0.35), linearDamping: 0.01 });
+  body.position.set(start.x, start.y, start.z);
+  // 중력으로 떨어지는 만큼 위로 보정해 조준한 곳에 맞게 한다
+  body.velocity.set(dir.x * SPEED, dir.y * SPEED + 0.5 * 9.82 * (dist / SPEED), dir.z * SPEED);
+  world.addBody(body);
+  // 공마다 다른 색으로 빛난다
+  const color = nextColor();
+  ballCount++;
+  recoil = 1;
+  burst(start, color, 18, 3, 0.4);
+  muzzleMat.emissive.copy(nextColor());
+  const mesh = new THREE.Mesh(ballGeo, new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: color, emissiveIntensity: 0.9, metalness: 0.3, roughness: 0.2 }));
+  mesh.castShadow = true;
+  scene.add(mesh);
+  body.addEventListener('collide', e => {
+    const blk = e.body.blockRef;
+    if (!blk) return;
+    const v = Math.abs(e.contact.getImpactVelocityAlongNormal());
+    if (v > 4) burst(body.position, blk.mesh.material.color, Math.min(30, 6 + v), 5);
+  });
+  balls.push({ body, mesh, color, born: performance.now() });
+  ballsLeft--;
+  updateHud();
+});
+
+// ---------- 입력 ----------
+const keys = {};
+addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+  if (e.key.toLowerCase() === 'r' && state !== 'menu') startLevel(level);
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+// 터치 버튼: 누르고 있는 동안 회전
+function holdButton(id, key) {
+  const el = $(id);
+  const set = v => e => { e.preventDefault(); keys[key] = v; el.classList.toggle('on', v); };
+  el.addEventListener('pointerdown', set(true));
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) el.addEventListener(ev, set(false));
+}
+holdButton('t-left', 'a');
+holdButton('t-right', 'd');
+$('t-reset').addEventListener('click', () => { if (state !== 'menu') startLevel(level); });
+addEventListener('contextmenu', e => e.preventDefault());
+
+// 세로 화면에서는 시야를 넓혀 섬 전체가 보이게 한다
+function fitCamera() {
+  camera.aspect = innerWidth / innerHeight;
+  camera.fov = camera.aspect < 1 ? Math.min(95, 55 / Math.max(camera.aspect, 0.45) * 0.8) : 55;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+}
+addEventListener('resize', fitCamera);
+fitCamera();
+
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
+
+// ---------- 루프 ----------
+let last = performance.now();
+function tick(now) {
+  const dt = Math.min((now - last) / 1000, 0.05);
+  last = now;
+
+  if (keys['a'] || keys['arrowleft']) { camAngle -= dt * 1.5; placeCamera(); }
+  if (keys['d'] || keys['arrowright']) { camAngle += dt * 1.5; placeCamera(); }
+
+  world.fixedStep(1 / 60, dt);
+
+  for (const b of blocks) {
+    b.mesh.position.copy(b.body.position);
+    b.mesh.quaternion.copy(b.body.quaternion);
+    if (!b.out && b.body.position.y < -1.5) {
+      b.out = true;
+      burst(b.body.position, b.mesh.material.color, 24, 6, 1.1);
+      levelScore += 100;
+      updateHud();
+    }
+    if (b.body.position.y < -40 && b.mesh.visible) { b.mesh.visible = false; b.body.sleep(); b.body.type = CANNON.Body.STATIC; }
+  }
+  for (let i = balls.length - 1; i >= 0; i--) {
+    const b = balls[i];
+    b.mesh.position.copy(b.body.position);
+    b.mesh.quaternion.copy(b.body.quaternion);
+    if (b.body.velocity.length() > 6)
+      emit(b.body.position.x + (Math.random() - 0.5) * 0.3, b.body.position.y + (Math.random() - 0.5) * 0.3, b.body.position.z + (Math.random() - 0.5) * 0.3, 0, 0, 0, b.color, 0.45, 0);
+    if (b.body.position.y < -40 || now - b.born > 12000) {
+      world.removeBody(b.body); scene.remove(b.mesh); b.mesh.material.dispose(); balls.splice(i, 1);
+    }
+  }
+
+  // 배경 연출
+  const t = now / 1000;
+  skyMat.uniforms.t.value = t;
+  for (const c of crystals) {
+    c.ang += c.speed * dt;
+    c.mesh.position.set(Math.cos(c.ang) * c.r, c.y + Math.sin(t * 0.8 + c.r) * 0.6, Math.sin(c.ang) * c.r);
+    c.mesh.rotation.y += c.spin * dt;
+    c.mesh.rotation.x += c.spin * 0.4 * dt;
+  }
+  updateCannon(dt);
+  glowA.position.set(Math.cos(t * 0.5) * 9, 4, Math.sin(t * 0.5) * 9);
+  glowB.position.set(Math.cos(t * 0.5 + Math.PI) * 9, 5, Math.sin(t * 0.5 + Math.PI) * 9);
+  updateParticles(dt);
+
+  if (state === 'play') {
+    const allOut = blocks.length && knockedCount() === blocks.length;
+    if (allOut) {
+      state = 'end';
+      confetti();
+      const bonus = ballsLeft * 150;
+      score += levelScore + bonus;
+      levelScore = 0;
+      updateHud();
+      if (level + 1 < LEVELS.length) {
+        showOverlay('클리어!', `남은 공 보너스 +${bonus}<br>누적 점수 ${score}`, '다음 레벨', () => startLevel(level + 1));
+      } else {
+        showOverlay('모든 레벨 완료!', `최종 점수 <b>${score}</b>`, '처음부터', () => { score = 0; startLevel(0); });
+      }
+    } else if (ballsLeft === 0) {
+      // 마지막 공 이후 블록이 멈출 때까지 잠시 대기
+      endTimer += dt;
+      const moving = blocks.some(b => !b.out && b.body.sleepState !== CANNON.Body.SLEEPING && b.body.velocity.length() > 0.2);
+      if (endTimer > 6 || (endTimer > 2.5 && !moving && balls.length === 0)) {
+        state = 'end';
+        showOverlay('공이 떨어졌어요', `${knockedCount()}/${blocks.length}개를 떨어뜨렸습니다.`, '다시 도전', () => startLevel(level));
+      }
+    }
+  }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+
+$('ov-btn').onclick = () => { score = 0; startLevel(0); };
+</script>
+</body>
+</html>
